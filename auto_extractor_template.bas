@@ -9,7 +9,7 @@ Type ENTRY
     As _Unsigned Long FILE_HASH
 End Type
 
-Const SIGNATURE = "QBA2"
+Const SIGNATURE = "QBA3"
 Dim As Archive_Header Archive_Header
 Dim As ENTRY Entry, EmptyEntry
 Dim As String ENTRY_FILE_NAME, ENTRY_FILE_CONTENT
@@ -54,9 +54,7 @@ For I = 1 To Archive_Header.ENTRY_COUNT
                 Select Case Entry.CTYPE
                     Case 0: FILE$ = ENTRY_FILE_CONTENT
                     Case 1: FILE$ = FrequencyDeCompress$(ENTRY_FILE_CONTENT)
-                    Case 2: FILE$ = OneByteDecode$(ENTRY_FILE_CONTENT)
-                    Case 3: FILE$ = _Inflate$(ENTRY_FILE_CONTENT)
-                    Case 4: FILE$ = RLEDecode$(ENTRY_FILE_CONTENT)
+                    Case 2: FILE$ = _Inflate$(ENTRY_FILE_CONTENT)
                 End Select
                 ENTRY_FILE_CONTENT = ""
                 If CRC32(FILE$) <> Entry.FILE_HASH Then
@@ -104,143 +102,6 @@ Sub Dialog (Text$)
     _Display
 End Sub
 
-Function CeilDivision~& (A~&, B~&)
-    CeilDivision~& = A~& \ B~& + Sgn(A~& Mod B~&)
-End Function
-Function OneByteEncode$ (__I$)
-    Dim As _Unsigned _Byte __ONEBYTE, __C
-    Dim As _Unsigned Long __BYTE_BUFFER_OFFSET, __POSITION_BUFFER_OFFSET, __I, __LENA, __Frequency_Table(0 To 255)
-    Dim __J As _Unsigned _Bit * 3
-    Dim As String __BYTE_BUFFER, __POSITION_BUFFER
-    __LENA = Len(__I$)
-    For __I = 1 To __LENA
-        __BYTE~%% = Asc(__I$, __I)
-        __Frequency_Table(__BYTE~%%) = __Frequency_Table(__BYTE~%%) + 1
-    Next __I
-    For __BI~%% = 0 To 255
-        If __Frequency_Table(__BI~%%) > __Frequency_Table(__ONEBYTE) Then __ONEBYTE = __BI~%%
-    Next __BI~%%
-    __BYTE_BUFFER = String$(Len(__I$), 0): __POSITION_BUFFER = String$(CeilDivision~&(Len(__I$), 8) + 1, 0)
-    For __I = 1 To Len(__I$)
-        __C = Asc(__I$, __I): If __J = 0 Then __POSITION_BUFFER_OFFSET = __POSITION_BUFFER_OFFSET + 1
-        If __C <> __ONEBYTE Then
-            Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET) = _SetBit(Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET), __J)
-            __BYTE_BUFFER_OFFSET = __BYTE_BUFFER_OFFSET + 1: Asc(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET) = __C
-        End If
-        __J = __J + 1
-    Next __I
-    __POSITION_BUFFER = _Deflate$(Left$(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET))
-    __BYTE_BUFFER = _Deflate$(Left$(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET))
-    OneByteEncode$ = MKL$(Len(__I$)) + MKL$(Len(__POSITION_BUFFER)) + MKL$(Len(__BYTE_BUFFER)) + Chr$(__ONEBYTE) + __POSITION_BUFFER + __BYTE_BUFFER
-    __POSITION_BUFFER = ""
-    __BYTE_BUFFER = ""
-End Function
-Function OneByteDecode$ (__I$)
-    Dim As _Unsigned Long __I, __BYTE_BUFFER_OFFSET, __POSITION_BUFFER_OFFSET
-    Dim As _Unsigned _Bit * 3 __J
-    Dim As String __BYTE_BUFFER, __POSITION_BUFFER, __OUT_BUFFER
-    __OUT_LENGTH~& = CVL(Left$(__I$, 4))
-    __POSITION_BUFFER_DEFLATE_LENGTH~& = CVL(Mid$(__I$, 5, 4))
-    __BYTE_BUFFER_DEFLATE_LENGTH~& = CVL(Mid$(__I$, 9, 4))
-    __ONEBYTE~%% = Asc(__I$, 13)
-    __POSITION_BUFFER = _Inflate$(Mid$(__I$, 14, __POSITION_BUFFER_DEFLATE_LENGTH~&))
-    __BYTE_BUFFER = _Inflate$(Mid$(__I$, 14 + __POSITION_BUFFER_DEFLATE_LENGTH~&, __BYTE_BUFFER_DEFLATE_LENGTH~&))
-    __OUT_BUFFER = String$(__OUT_LENGTH~&, 0)
-    __POSITION_BUFFER_OFFSET = 0
-    __BYTE_BUFFER_OFFSET = 0
-    For __I = 1 To __OUT_LENGTH~&
-        If __J = 0 Then __POSITION_BUFFER_OFFSET = __POSITION_BUFFER_OFFSET + 1
-        If _ReadBit(Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET), __J) Then
-            __BYTE_BUFFER_OFFSET = __BYTE_BUFFER_OFFSET + 1
-            Asc(__OUT_BUFFER, __I) = Asc(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET)
-        Else
-            Asc(__OUT_BUFFER, __I) = __ONEBYTE~%%
-        End If
-        __J = __J + 1
-    Next __I
-    __POSITION_BUFFER = ""
-    __BYTE_BUFFER = ""
-    OneByteDecode = __OUT_BUFFER
-End Function
-Function RLEEncode$ (__I$)
-    Dim As _Unsigned _Byte __CB, __LB, __C
-    Dim As Long __I
-    Dim As String __OUT_BUFFER
-    __OUT_BUFFER = String$(Len(__I$) * 2, 0)
-    __LB = Asc(__I$, 1)
-    __C = 1
-    For __I = 2 To Len(__I$)
-        __CB = Asc(__I$, __I)
-        If __CB = __LB And __C < 255 Then
-            __C = __C + 1
-        Else
-            __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-            Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __LB
-            __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-            Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __C
-            __C = 1
-            __LB = __CB
-        End If
-    Next __I
-    __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-    Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __LB
-    __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-    Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __C
-    If 5 + __OUT_BUFFER_OFFSET > Len(__I$) Then
-        RLEEncode$ = Chr$(0) + __I$
-    Else
-        RLEEncode$ = Chr$(1) + MKL$(Len(__I$)) + Left$(__OUT_BUFFER, __OUT_BUFFER_OFFSET + 1)
-    End If
-    __OUT_BUFFER = ""
-End Function
-Function RLEDecode$ (__I$)
-    Dim As _Unsigned _Byte __B, __C
-    Dim As Long __I, __OUT_BUFFER_OFFSET
-    Dim As String __OUT_BUFFER
-    If Asc(__I$, 1) = 0 Then
-        RLEDecode$ = Mid$(__I$, 2)
-        Exit Function
-    End If
-    __OUT_LENGTH~& = CVL(Mid$(__I$, 2, 4))
-    __OUT_BUFFER = String$(__OUT_LENGTH~&, 0)
-    __OUT_BUFFER_OFFSET = 1
-    For __I = 6 To Len(__I$) - 1
-        __B = Asc(__I$, __I): __I = __I + 1: __C = Asc(__I$, __I)
-        Mid$(__OUT_BUFFER, __OUT_BUFFER_OFFSET, __C) = String$(__C, __B)
-        __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + __C
-    Next __I
-    RLEDecode$ = __OUT_BUFFER
-    __OUT_BUFFER = ""
-End Function
-Function FrequencyCompress$ (__I$)
-    Dim As _Unsigned _Byte __Code_Table(0 To 255), __Inverse_Code_Table(0 To 255)
-    Dim As _Unsigned Long __Frequency_Table(0 To 255)
-    Dim As _Unsigned Long __I, __LENA
-    __LENA = Len(__I$)
-    For __I = 1 To __LENA
-        __BYTE~%% = Asc(__I$, __I)
-        __Frequency_Table(__BYTE~%%) = __Frequency_Table(__BYTE~%%) + 1
-    Next __I
-    For __BJ~%% = 0 To 255
-        For __BI~%% = 0 To 255
-            If __Frequency_Table(__BI~%%) > __Frequency_Table(__MAXBYTE~%%) Then __MAXBYTE~%% = __BI~%%
-        Next __BI~%%
-        __Code_Table(__MAXBYTE~%%) = __BJ~%%
-        __Inverse_Code_Table(__BJ~%%) = __MAXBYTE~%%
-        __Frequency_Table(__MAXBYTE~%%) = 0
-        __MAXBYTE~%% = __MAXBYTE~%% + 1
-    Next __BJ~%%
-    __B$ = String$(256 + __LENA, 0)
-    For __I = 0 To 255
-        Asc(__B$, __I + 1) = __Inverse_Code_Table(__I)
-    Next __I
-    For __I = 1 To __LENA
-        Asc(__B$, 256 + __I) = __Code_Table(Asc(__I$, __I))
-    Next __I
-    __B$ = ZeroByteEncode$(__B$)
-    FrequencyCompress$ = __B$
-    __B$ = ""
-End Function
 Function FrequencyDeCompress$ (__I$)
     Dim __Inverse_Code_Table(0 To 255) As _Unsigned _Byte
     Dim As _Unsigned Long __I, __LENA
@@ -255,26 +116,6 @@ Function FrequencyDeCompress$ (__I$)
     Next __I
     FrequencyDeCompress$ = __O$
     __O$ = ""
-End Function
-Function ZeroByteEncode$ (__I$)
-    Dim As _Unsigned _Byte __C
-    Dim As _Unsigned Long __BYTE_BUFFER_OFFSET, __POSITION_BUFFER_OFFSET, __I
-    Dim __J As _Unsigned _Bit * 3
-    Dim As String __BYTE_BUFFER, __POSITION_BUFFER
-    __BYTE_BUFFER = String$(Len(__I$), 0): __POSITION_BUFFER = String$(CeilDivision~&(Len(__I$), 8) + 1, 0)
-    For __I = 1 To Len(__I$)
-        __C = Asc(__I$, __I): If __J = 0 Then __POSITION_BUFFER_OFFSET = __POSITION_BUFFER_OFFSET + 1
-        If __C Then
-            Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET) = _SetBit(Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET), __J)
-            __BYTE_BUFFER_OFFSET = __BYTE_BUFFER_OFFSET + 1: Asc(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET) = __C
-        End If
-        __J = __J + 1
-    Next __I
-    __POSITION_BUFFER = _Deflate$(Left$(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET))
-    __BYTE_BUFFER = _Deflate$(Left$(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET))
-    ZeroByteEncode$ = MKL$(Len(__I$)) + MKL$(__POSITION_BUFFER_OFFSET) + MKL$(__BYTE_BUFFER_OFFSET) + MKL$(Len(__POSITION_BUFFER)) + MKL$(Len(__BYTE_BUFFER)) + __POSITION_BUFFER + __BYTE_BUFFER
-    __POSITION_BUFFER = ""
-    __BYTE_BUFFER = ""
 End Function
 Function ZeroByteDecode$ (__I$)
     Dim As _Unsigned Long __I, __BYTE_BUFFER_OFFSET, __POSITION_BUFFER_OFFSET

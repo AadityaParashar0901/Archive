@@ -11,7 +11,7 @@ Type ENTRY
 End Type
 
 
-Const SIGNATURE = "QBA2"
+Const SIGNATURE = "QBA3"
 Dim As Archive_Header Archive_Header
 Dim As ENTRY Entry, EmptyEntry
 Dim As String ENTRY_FILE_NAME, ENTRY_FILE_CONTENT
@@ -25,6 +25,7 @@ If _StriCmp(Command$(1), "-p") = 0 Then MODE = 1
 If _StriCmp(Command$(1), "-u") = 0 Then MODE = 2: EXTRACT_PATH$ = Command$(3)
 If _StriCmp(Command$(1), "-l") = 0 Then MODE = 3
 If _StriCmp(Command$(1), "-ld") = 0 Then MODE = 4
+If _StriCmp(Command$(1), "-lf") = 0 Then MODE = 5
 
 If _FileExists(ARCHIVE$) = 0 Then
     ARCHIVE$ = _StartDir$ + "\" + ARCHIVE$
@@ -39,7 +40,8 @@ If _CommandCount < 2 Or MODE = 0 Then
     Print
     Print "Pack:   archive -p [ARCHIVE NAME] [FILEs / FOLDERs] ..."
     Print "List:   archive -l [ARCHIVE NAME] [PATH]"
-    Print "List D: archive -l [ARCHIVE NAME] [PATH]"
+    Print "List D: archive -ld [ARCHIVE NAME] [PATH]"
+    Print "List F: archive -lf [ARCHIVE NAME] [PATH]"
     Print "Unpack: archive -u [ARCHIVE NAME] [DIRECTORY]"
     System
 End If
@@ -110,38 +112,26 @@ Select Case MODE
                     Entry.FILE_HASH = CRC32(FILE$)
                     Print ", File Hash: "; LongToHex$(Entry.FILE_HASH);
                     FC$ = FrequencyCompress$(FILE$)
-                    OBC$ = OneByteEncode$(FILE$)
                     DC$ = _Deflate$(FILE$)
-                    RLEC$ = RLEEncode$(FILE$)
                     FCL& = Len(FC$)
-                    OBCL& = Len(OBC$)
                     DCL& = Len(DC$)
-                    RLECL& = Len(RLEC$)
                     Entry.FILE_SIZE = Len(FILE$)
                     Entry.C_FILE_SIZE = Entry.FILE_SIZE
                     Entry.CTYPE = 0
                     If Entry.C_FILE_SIZE > FCL& Then Entry.C_FILE_SIZE = FCL&: Entry.CTYPE = 1 'f
-                    If Entry.C_FILE_SIZE > OBCL& Then Entry.C_FILE_SIZE = OBCL&: Entry.CTYPE = 2 '1B
-                    If Entry.C_FILE_SIZE > DCL& Then Entry.C_FILE_SIZE = DCL&: Entry.CTYPE = 3 'deflate
-                    If Entry.C_FILE_SIZE > RLECL& Then Entry.C_FILE_SIZE = RLECL&: Entry.CTYPE = 4 'rle
+                    If Entry.C_FILE_SIZE > DCL& Then Entry.C_FILE_SIZE = DCL&: Entry.CTYPE = 2 'deflate
                     Print ", Compression: ";
                     Select Case Entry.CTYPE
                         Case 0: ENTRY_FILE_CONTENT = FILE$
                             Print "None";
                         Case 1: ENTRY_FILE_CONTENT = FC$
                             Print "Frequency";
-                        Case 2: ENTRY_FILE_CONTENT = OBC$
-                            Print "One Byte";
-                        Case 3: ENTRY_FILE_CONTENT = DC$
+                        Case 2: ENTRY_FILE_CONTENT = DC$
                             Print "Deflate";
-                        Case 4: ENTRY_FILE_CONTENT = RLEC$
-                            Print "RLE";
                     End Select
                     FILE$ = ""
                     FC$ = ""
-                    OBC$ = ""
                     DC$ = ""
-                    RLEC$ = ""
                 Else
                     Entry.FILE_SIZE = 0
                     Entry.C_FILE_SIZE = 0
@@ -177,9 +167,7 @@ Select Case MODE
                         Select Case Entry.CTYPE
                             Case 0: FILE$ = ENTRY_FILE_CONTENT
                             Case 1: FILE$ = FrequencyDeCompress$(ENTRY_FILE_CONTENT)
-                            Case 2: FILE$ = OneByteDecode$(ENTRY_FILE_CONTENT)
-                            Case 3: FILE$ = _Inflate$(ENTRY_FILE_CONTENT)
-                            Case 4: FILE$ = RLEDecode$(ENTRY_FILE_CONTENT)
+                            Case 2: FILE$ = _Inflate$(ENTRY_FILE_CONTENT)
                         End Select
                         ENTRY_FILE_CONTENT = ""
                         If CRC32(FILE$) <> Entry.FILE_HASH Then Print "File is corrupted": System
@@ -208,7 +196,7 @@ Select Case MODE
                             If _StriCmp(Command$(J), Left$(FILE_NAME$, Len(Command$(J)))) = 0 Then Color 15, 0: Print LongToHex$(I); ": "; String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$)
                         Next J
                     Else
-                        Color 15, 0: Print LongToHex$(I); ": "; String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$)
+                        Color 15, 0: Print LongToHex$(I); ": "; "("; _Trim$(Str$(Entry.CTYPE)); ")"; String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$)
                     End If
                     Seek #1, Seek(1) + Entry.C_FILE_SIZE
                 Case 2: If _CommandCount > 2 Then
@@ -229,6 +217,31 @@ Select Case MODE
             Select Case Entry.TYPE
                 Case 1: Seek #1, Seek(1) + Entry.C_FILE_SIZE
                 Case 2: Color 9, 0: Print LongToHex$(I); ": "; FILE_NAME$; "\"
+            End Select
+        Next I
+    Case 5: Print "Listing"; Archive_Header.ENTRY_COUNT; " files from "; ARCHIVE$: Print
+        For I = 1 To Archive_Header.ENTRY_COUNT
+            Get #1, , Entry
+            ENTRY_FILE_NAME = String$(Entry.FILE_NAME_LENGTH, 0)
+            Get #1, , ENTRY_FILE_NAME
+            FILE_NAME$ = ENTRY_FILE_NAME
+            Select Case Entry.TYPE
+                Case 1:
+                    If _CommandCount > 2 Then
+                        For J = 3 To _CommandCount
+                            If _StriCmp(Command$(J), Left$(FILE_NAME$, Len(Command$(J)))) = 0 Then Color 15, 0: Print LongToHex$(I); ": "; String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$)
+                        Next J
+                    Else
+                        Color 15, 0: Print LongToHex$(I); ": "; "("; _Trim$(Str$(Entry.CTYPE)); ")"; FILE_NAME$
+                    End If
+                    Seek #1, Seek(1) + Entry.C_FILE_SIZE
+                Case 2: If _CommandCount > 2 Then
+                        For J = 3 To _CommandCount
+                            If _StriCmp(Command$(J), Left$(FILE_NAME$, Len(Command$(J)))) = 0 Then Color 9, 0: Print LongToHex$(I); ": "; FILE_NAME$; "\"
+                        Next J
+                    Else
+                        Color 9, 0: Print LongToHex$(I); ": "; FILE_NAME$; "\"
+                    End If
             End Select
         Next I
 End Select
@@ -295,111 +308,6 @@ Sub ListPrint (__List As String)
 End Sub
 Function CeilDivision~& (A~&, B~&)
     CeilDivision~& = A~& \ B~& + Sgn(A~& Mod B~&)
-End Function
-Function OneByteEncode$ (__I$)
-    Dim As _Unsigned _Byte __ONEBYTE, __C
-    Dim As _Unsigned Long __BYTE_BUFFER_OFFSET, __POSITION_BUFFER_OFFSET, __I, __LENA, __Frequency_Table(0 To 255)
-    Dim __J As _Unsigned _Bit * 3
-    Dim As String __BYTE_BUFFER, __POSITION_BUFFER
-    __LENA = Len(__I$)
-    For __I = 1 To __LENA
-        __BYTE~%% = Asc(__I$, __I)
-        __Frequency_Table(__BYTE~%%) = __Frequency_Table(__BYTE~%%) + 1
-    Next __I
-    For __BI~%% = 0 To 255
-        If __Frequency_Table(__BI~%%) > __Frequency_Table(__ONEBYTE) Then __ONEBYTE = __BI~%%
-    Next __BI~%%
-    __BYTE_BUFFER = String$(Len(__I$), 0): __POSITION_BUFFER = String$(CeilDivision~&(Len(__I$), 8) + 1, 0)
-    For __I = 1 To Len(__I$)
-        __C = Asc(__I$, __I): If __J = 0 Then __POSITION_BUFFER_OFFSET = __POSITION_BUFFER_OFFSET + 1
-        If __C <> __ONEBYTE Then
-            Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET) = _SetBit(Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET), __J)
-            __BYTE_BUFFER_OFFSET = __BYTE_BUFFER_OFFSET + 1: Asc(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET) = __C
-        End If
-        __J = __J + 1
-    Next __I
-    __POSITION_BUFFER = _Deflate$(Left$(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET))
-    __BYTE_BUFFER = _Deflate$(Left$(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET))
-    OneByteEncode$ = MKL$(Len(__I$)) + MKL$(Len(__POSITION_BUFFER)) + MKL$(Len(__BYTE_BUFFER)) + Chr$(__ONEBYTE) + __POSITION_BUFFER + __BYTE_BUFFER
-    __POSITION_BUFFER = ""
-    __BYTE_BUFFER = ""
-End Function
-Function OneByteDecode$ (__I$)
-    Dim As _Unsigned Long __I, __BYTE_BUFFER_OFFSET, __POSITION_BUFFER_OFFSET
-    Dim As _Unsigned _Bit * 3 __J
-    Dim As String __BYTE_BUFFER, __POSITION_BUFFER, __OUT_BUFFER
-    __OUT_LENGTH~& = CVL(Left$(__I$, 4))
-    __POSITION_BUFFER_DEFLATE_LENGTH~& = CVL(Mid$(__I$, 5, 4))
-    __BYTE_BUFFER_DEFLATE_LENGTH~& = CVL(Mid$(__I$, 9, 4))
-    __ONEBYTE~%% = Asc(__I$, 13)
-    __POSITION_BUFFER = _Inflate$(Mid$(__I$, 14, __POSITION_BUFFER_DEFLATE_LENGTH~&))
-    __BYTE_BUFFER = _Inflate$(Mid$(__I$, 14 + __POSITION_BUFFER_DEFLATE_LENGTH~&, __BYTE_BUFFER_DEFLATE_LENGTH~&))
-    __OUT_BUFFER = String$(__OUT_LENGTH~&, 0)
-    __POSITION_BUFFER_OFFSET = 0
-    __BYTE_BUFFER_OFFSET = 0
-    For __I = 1 To __OUT_LENGTH~&
-        If __J = 0 Then __POSITION_BUFFER_OFFSET = __POSITION_BUFFER_OFFSET + 1
-        If _ReadBit(Asc(__POSITION_BUFFER, __POSITION_BUFFER_OFFSET), __J) Then
-            __BYTE_BUFFER_OFFSET = __BYTE_BUFFER_OFFSET + 1
-            Asc(__OUT_BUFFER, __I) = Asc(__BYTE_BUFFER, __BYTE_BUFFER_OFFSET)
-        Else
-            Asc(__OUT_BUFFER, __I) = __ONEBYTE~%%
-        End If
-        __J = __J + 1
-    Next __I
-    __POSITION_BUFFER = ""
-    __BYTE_BUFFER = ""
-    OneByteDecode = __OUT_BUFFER
-End Function
-Function RLEEncode$ (__I$)
-    Dim As _Unsigned _Byte __CB, __LB, __C
-    Dim As Long __I
-    Dim As String __OUT_BUFFER
-    __OUT_BUFFER = String$(Len(__I$) * 2, 0)
-    __LB = Asc(__I$, 1)
-    __C = 1
-    For __I = 2 To Len(__I$)
-        __CB = Asc(__I$, __I)
-        If __CB = __LB And __C < 255 Then
-            __C = __C + 1
-        Else
-            __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-            Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __LB
-            __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-            Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __C
-            __C = 1
-            __LB = __CB
-        End If
-    Next __I
-    __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-    Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __LB
-    __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + 1
-    Asc(__OUT_BUFFER, __OUT_BUFFER_OFFSET) = __C
-    If 5 + __OUT_BUFFER_OFFSET > Len(__I$) Then
-        RLEEncode$ = Chr$(0) + __I$
-    Else
-        RLEEncode$ = Chr$(1) + MKL$(Len(__I$)) + Left$(__OUT_BUFFER, __OUT_BUFFER_OFFSET + 1)
-    End If
-    __OUT_BUFFER = ""
-End Function
-Function RLEDecode$ (__I$)
-    Dim As _Unsigned _Byte __B, __C
-    Dim As Long __I, __OUT_BUFFER_OFFSET
-    Dim As String __OUT_BUFFER
-    If Asc(__I$, 1) = 0 Then
-        RLEDecode$ = Mid$(__I$, 2)
-        Exit Function
-    End If
-    __OUT_LENGTH~& = CVL(Mid$(__I$, 2, 4))
-    __OUT_BUFFER = String$(__OUT_LENGTH~&, 0)
-    __OUT_BUFFER_OFFSET = 1
-    For __I = 6 To Len(__I$) - 1
-        __B = Asc(__I$, __I): __I = __I + 1: __C = Asc(__I$, __I)
-        Mid$(__OUT_BUFFER, __OUT_BUFFER_OFFSET, __C) = String$(__C, __B)
-        __OUT_BUFFER_OFFSET = __OUT_BUFFER_OFFSET + __C
-    Next __I
-    RLEDecode$ = __OUT_BUFFER
-    __OUT_BUFFER = ""
 End Function
 Function FrequencyCompress$ (__I$)
     Dim As _Unsigned _Byte __Code_Table(0 To 255), __Inverse_Code_Table(0 To 255)
