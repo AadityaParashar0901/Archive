@@ -22,9 +22,16 @@ RELATIVE_PATH = _StartDir$ + "\"
 ARCHIVE$ = Command$(2)
 
 If _StriCmp(Command$(1), "-p") = 0 Then MODE = 1
-If _StriCmp(Command$(1), "-u") = 0 Then MODE = 2
+If _StriCmp(Command$(1), "-u") = 0 Then MODE = 2: EXTRACT_PATH$ = Command$(3)
 If _StriCmp(Command$(1), "-l") = 0 Then MODE = 3
 If _StriCmp(Command$(1), "-ld") = 0 Then MODE = 4
+
+If _FileExists(ARCHIVE$) = 0 Then
+    ARCHIVE$ = _StartDir$ + "\" + ARCHIVE$
+    If MODE = 2 Then
+        EXTRACT_PATH$ = _StartDir$ + "\" + EXTRACT_PATH$
+    End If
+End If
 
 If _CommandCount < 2 Or MODE = 0 Then
     HELP:
@@ -38,6 +45,7 @@ If _CommandCount < 2 Or MODE = 0 Then
 End If
 
 If MODE <> 1 Then
+    If _FileExists(ARCHIVE$) = 0 Then Print "Archive File does not exists": System
     Open ARCHIVE$ For Binary As #1
     Get #1, , Archive_Header
     If Archive_Header.SIGNATURE <> SIGNATURE Then Print "Invalid Archive File": System
@@ -151,8 +159,8 @@ Select Case MODE
         Loop
         Seek #1, 1
         Put #1, , Archive_Header
-    Case 2: If _DirExists(Command$(3)) = 0 Then MkDir Command$(3)
-        ChDir Command$(3)
+    Case 2: If _DirExists(EXTRACT_PATH$) = 0 Then MkDir EXTRACT_PATH$
+        ChDir EXTRACT_PATH$
         Y = CsrLin
         For I = 1 To Archive_Header.ENTRY_COUNT
             Get #1, , Entry
