@@ -11,12 +11,12 @@ Type ENTRY
 End Type
 
 
-Const SIGNATURE = "QBA1"
+Const SIGNATURE = "QBA2"
 Dim As Archive_Header Archive_Header
 Dim As ENTRY Entry, EmptyEntry
 Dim As String ENTRY_FILE_NAME, ENTRY_FILE_CONTENT
 
-Dim As String FILEStack, RELATIVE_PATH
+Dim As String FILEQueue, RELATIVE_PATH
 RELATIVE_PATH = _StartDir$ + "\"
 
 ARCHIVE$ = Command$(2)
@@ -24,13 +24,15 @@ ARCHIVE$ = Command$(2)
 If _StriCmp(Command$(1), "-p") = 0 Then MODE = 1
 If _StriCmp(Command$(1), "-u") = 0 Then MODE = 2
 If _StriCmp(Command$(1), "-l") = 0 Then MODE = 3
+If _StriCmp(Command$(1), "-ld") = 0 Then MODE = 4
 
 If _CommandCount < 2 Or MODE = 0 Then
     HELP:
     Print "Multi Compressor Archive"
     Print
     Print "Pack:   archive -p [ARCHIVE NAME] [FILEs / FOLDERs] ..."
-    Print "List:   archive -l"
+    Print "List:   archive -l [ARCHIVE NAME] [PATH]"
+    Print "List D: archive -l [ARCHIVE NAME] [PATH]"
     Print "Unpack: archive -u [ARCHIVE NAME] [DIRECTORY]"
     System
 End If
@@ -52,20 +54,22 @@ Select Case MODE
             Open ARCHIVE$ For Binary As #1
             Archive_Header.SIGNATURE = SIGNATURE
         End If
-        FILEStack = ListNew$
+        FILEQueue = ListNew$
         For FILEI = 3 To _CommandCount
-            FILEStack = StackAdd$(FILEStack, RELATIVE_PATH + Command$(FILEI))
+            FILEQueue = QueueAdd$(FILEQueue, RELATIVE_PATH + Command$(FILEI))
         Next FILEI
         Seek #1, 1
         Put #1, , Archive_Header
         Seek #1, LOF(1) + 1
+        Y = CsrLin
         Do
-            If ListLength~&(FILEStack) = 0 Then Exit Do
-            FILE_NAME$ = StackDelete$(FILEStack)
+            Locate Y, 1
+            If ListLength~&(FILEQueue) = 0 Then Exit Do
+            FILE_NAME$ = QueueDelete$(FILEQueue)
             If _DirExists(FILE_NAME$) Then
-                Print "Entry "; LongToHex$(Archive_Header.ENTRY_COUNT); ": Adding Folder '"; FILE_NAME$; "' to Stack"
+                Print "Entry "; LongToHex$(Archive_Header.ENTRY_COUNT + 1); ": Adding Folder '"; FILE_NAME$; "' to Queue";
                 Entry.TYPE = 2 'Dir
-                ENTRY_FILE_NAME = _Deflate$(Mid$(FILE_NAME$, Len(RELATIVE_PATH) + 1))
+                ENTRY_FILE_NAME = Mid$(FILE_NAME$, Len(RELATIVE_PATH) + 1)
                 Entry.FILE_NAME_LENGTH = Len(ENTRY_FILE_NAME)
                 Shell "dir /b /o:n " + Chr$(34) + FILE_NAME$ + Chr$(34) + " > tmp.txt"
                 FILE_COUNT = 0
@@ -73,7 +77,7 @@ Select Case MODE
                 Do
                     If LOF(3) = 0 Then Exit Do
                     Line Input #3, L$
-                    FILEStack = StackAdd$(FILEStack, FILE_NAME$ + "\" + L$)
+                    FILEQueue = QueueAdd$(FILEQueue, FILE_NAME$ + "\" + L$)
                     FILE_COUNT = FILE_COUNT + 1
                 Loop Until EOF(3)
                 Close #3
@@ -87,8 +91,8 @@ Select Case MODE
                 Archive_Header.ENTRY_COUNT = Archive_Header.ENTRY_COUNT + 1
             Else
                 Entry.TYPE = 1 'File
-                Print "Entry "; LongToHex$(Archive_Header.ENTRY_COUNT); ": Adding File '"; FILENAME$(FILE_NAME$); "' to Archive";
-                ENTRY_FILE_NAME = _Deflate$(Mid$(FILE_NAME$, Len(RELATIVE_PATH) + 1))
+                Print "Entry "; LongToHex$(Archive_Header.ENTRY_COUNT + 1); ": Adding File '"; FILENAME$(FILE_NAME$); "' to Archive";
+                ENTRY_FILE_NAME = Mid$(FILE_NAME$, Len(RELATIVE_PATH) + 1)
                 Entry.FILE_NAME_LENGTH = Len(ENTRY_FILE_NAME)
                 Open FILE_NAME$ For Binary As #2
                 FILE$ = String$(LOF(2), 0)
@@ -111,19 +115,19 @@ Select Case MODE
                     If Entry.C_FILE_SIZE > FCL& Then Entry.C_FILE_SIZE = FCL&: Entry.CTYPE = 1 'f
                     If Entry.C_FILE_SIZE > OBCL& Then Entry.C_FILE_SIZE = OBCL&: Entry.CTYPE = 2 '1B
                     If Entry.C_FILE_SIZE > DCL& Then Entry.C_FILE_SIZE = DCL&: Entry.CTYPE = 3 'deflate
-                    If Entry.C_FILE_SIZE > RLECL& Then Entry.C_FILE_SIZE = RLECL&: netry.ctype = 4 'rle
+                    If Entry.C_FILE_SIZE > RLECL& Then Entry.C_FILE_SIZE = RLECL&: Entry.CTYPE = 4 'rle
                     Print ", Compression: ";
                     Select Case Entry.CTYPE
                         Case 0: ENTRY_FILE_CONTENT = FILE$
-                            Print "None"
+                            Print "None";
                         Case 1: ENTRY_FILE_CONTENT = FC$
-                            Print "Frequency"
+                            Print "Frequency";
                         Case 2: ENTRY_FILE_CONTENT = OBC$
-                            Print "One Byte"
+                            Print "One Byte";
                         Case 3: ENTRY_FILE_CONTENT = DC$
-                            Print "Deflate"
+                            Print "Deflate";
                         Case 4: ENTRY_FILE_CONTENT = RLEC$
-                            Print "RLE"
+                            Print "RLE";
                     End Select
                     FILE$ = ""
                     FC$ = ""
@@ -133,6 +137,7 @@ Select Case MODE
                 Else
                     Entry.FILE_SIZE = 0
                     Entry.C_FILE_SIZE = 0
+                    Entry.CTYPE = 0
                 End If
                 Put #1, , Entry
                 Put #1, , ENTRY_FILE_NAME
@@ -142,23 +147,27 @@ Select Case MODE
             Entry = EmptyEntry
             ENTRY_FILE_NAME = ""
             ENTRY_FILE_CONTENT = ""
+            Print Space$(32)
         Loop
         Seek #1, 1
         Put #1, , Archive_Header
     Case 2: If _DirExists(Command$(3)) = 0 Then MkDir Command$(3)
         ChDir Command$(3)
+        Y = CsrLin
         For I = 1 To Archive_Header.ENTRY_COUNT
             Get #1, , Entry
             ENTRY_FILE_NAME = String$(Entry.FILE_NAME_LENGTH, 0)
             Get #1, , ENTRY_FILE_NAME
-            FILE_NAME$ = _Inflate$(ENTRY_FILE_NAME)
+            FILE_NAME$ = ENTRY_FILE_NAME
+            Locate Y, 1
             Select Case Entry.TYPE
                 Case 1
-                    Print "Extracting File: "; FILE_NAME$;
+                    Print LongToHex$(I); "/"; LongToHex$(Archive_Header.ENTRY_COUNT); ": Extracting File: "; FILE_NAME$;
                     If Entry.FILE_SIZE Then
                         ENTRY_FILE_CONTENT = String$(Entry.C_FILE_SIZE, 0)
                         Get #1, , ENTRY_FILE_CONTENT
                         Select Case Entry.CTYPE
+                            Case 0: FILE$ = ENTRY_FILE_CONTENT
                             Case 1: FILE$ = FrequencyDeCompress$(ENTRY_FILE_CONTENT)
                             Case 2: FILE$ = OneByteDecode$(ENTRY_FILE_CONTENT)
                             Case 3: FILE$ = _Inflate$(ENTRY_FILE_CONTENT)
@@ -170,37 +179,62 @@ Select Case MODE
                     Open FILE_NAME$ For Binary As #2
                     If Entry.FILE_SIZE Then Put #2, , FILE$
                     Close #2
+                    If _FileExists(FILE_NAME$) = 0 Then Print " failed"; Space$(32): Y = Y + 1
                     FILE$ = ""
-                    Print " done"
+                    Print " done"; Space$(32)
                 Case 2
-                    Print "Creating Directory: "; FILE_NAME$;
-                    MkDir FILE_NAME$
+                    Print LongToHex$(I); "/"; LongToHex$(Archive_Header.ENTRY_COUNT); ": Creating Directory: "; FILE_NAME$; Space$(32)
+                    If _DirExists(FILE_NAME$) = 0 Then MkDir FILE_NAME$
             End Select
         Next I
-    Case 3: Print "Listing "; ARCHIVE$: Print
+    Case 3: Print "Listing"; Archive_Header.ENTRY_COUNT; " files from "; ARCHIVE$: Print
         For I = 1 To Archive_Header.ENTRY_COUNT
             Get #1, , Entry
             ENTRY_FILE_NAME = String$(Entry.FILE_NAME_LENGTH, 0)
             Get #1, , ENTRY_FILE_NAME
-            FILE_NAME$ = _Inflate$(ENTRY_FILE_NAME)
+            FILE_NAME$ = ENTRY_FILE_NAME
             Select Case Entry.TYPE
-                Case 1: Color 15, 0: Print String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$)
+                Case 1:
+                    If _CommandCount > 2 Then
+                        For J = 3 To _CommandCount
+                            If _StriCmp(Command$(J), Left$(FILE_NAME$, Len(Command$(J)))) = 0 Then Color 15, 0: Print LongToHex$(I); ": "; String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$)
+                        Next J
+                    Else
+                        Color 15, 0: Print LongToHex$(I); ": "; String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$)
+                    End If
                     Seek #1, Seek(1) + Entry.C_FILE_SIZE
-                Case 2: Color 9, 0: Print String$(2 * CountChars(FILE_NAME$, 92), 32); FILENAME$(FILE_NAME$); "\"
+                Case 2: If _CommandCount > 2 Then
+                        For J = 3 To _CommandCount
+                            If _StriCmp(Command$(J), Left$(FILE_NAME$, Len(Command$(J)))) = 0 Then Color 9, 0: Print LongToHex$(I); ": "; FILE_NAME$; "\"
+                        Next J
+                    Else
+                        Color 9, 0: Print LongToHex$(I); ": "; FILE_NAME$; "\"
+                    End If
+            End Select
+        Next I
+    Case 4: Print "Listing"; Archive_Header.ENTRY_COUNT; " files from "; ARCHIVE$: Print
+        For I = 1 To Archive_Header.ENTRY_COUNT
+            Get #1, , Entry
+            ENTRY_FILE_NAME = String$(Entry.FILE_NAME_LENGTH, 0)
+            Get #1, , ENTRY_FILE_NAME
+            FILE_NAME$ = ENTRY_FILE_NAME
+            Select Case Entry.TYPE
+                Case 1: Seek #1, Seek(1) + Entry.C_FILE_SIZE
+                Case 2: Color 9, 0: Print LongToHex$(I); ": "; FILE_NAME$; "\"
             End Select
         Next I
 End Select
 System
 
-Function StackAdd$ (__Stack As String, __Item As String)
-    StackAdd$ = ListAdd$(__Stack, __Item)
+Function QueueAdd$ (__Queue As String, __Item As String)
+    QueueAdd$ = ListAdd$(__Queue, __Item)
 End Function
-Function StackSee$ (__Stack As String)
-    StackSee$ = ListGet$(__Stack, ListLength~&(__Stack))
+Function QueueSee$ (__Queue As String)
+    QueueSee$ = ListGet$(__Queue, 1)
 End Function
-Function StackDelete$ (__Stack As String)
-    StackDelete$ = ListGet$(__Stack, ListLength~&(__Stack))
-    __Stack = ListDelete$(__Stack, ListLength~&(__Stack))
+Function QueueDelete$ (__Queue As String)
+    QueueDelete$ = ListGet$(__Queue, 1)
+    __Queue = ListDelete$(__Queue, 1)
 End Function
 Function ListNew$
     ListNew$ = MKL$(0)
