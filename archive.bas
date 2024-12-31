@@ -10,7 +10,6 @@ Type ENTRY
     As _Unsigned Long FILE_HASH
 End Type
 
-
 Const SIGNATURE = "QBA3"
 Dim As Archive_Header Archive_Header
 Dim As ENTRY Entry, EmptyEntry
